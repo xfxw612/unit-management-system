@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>部门管理 · 单位管理系统</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar"></aside>
+  <main class="main">
+    <div class="page-head">
+      <h2>部门管理</h2>
+      <span class="hint" id="scopeHint"></span>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <span class="muted">部门编码在同一单位内唯一；部门下还有在职人员时不允许删除。</span>
+        <span class="spacer"></span>
+        <button data-perm="dept:write" id="btnAdd">新增部门</button>
+      </div>
+      <table>
+        <thead>
+        <tr><th>排序</th><th>编码</th><th>部门名称</th><th>负责人</th><th class="num">在职人数</th><th>操作</th></tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<dialog id="dlg">
+  <form id="deptForm" method="dialog">
+    <div class="dlg-head" id="dlgTitle">新增部门</div>
+    <div class="dlg-body">
+      <label>部门编码 <input id="fCode" maxlength="20" placeholder="如 RD"></label>
+      <label>部门名称 <input id="fName" maxlength="30" placeholder="如 研发中心"></label>
+      <label>负责人 <input id="fLeader" maxlength="20"></label>
+      <label>排序 <input id="fSort" type="number" min="1" max="99" value="99"></label>
+      <div class="err" id="dlgErr"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="ghost" id="dlgCancel">取消</button>
+      <button type="submit">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/app.js"></script>
+<script>
+(async function () {
+  let me;
+  try { me = await boot('dept:read'); } catch (e) { return; }
+
+  const canWrite = me.perms.includes('dept:write');
+  $('#scopeHint').textContent = me.roleLevel <= 1 ? '数据范围：全部部门' : '数据范围：仅本部门（只有系统管理员能维护部门）';
+  if (!canWrite) $('#btnAdd').style.display = 'none';
+
+  let editingId = null;
+
+  async function load() {
+    try {
+      const list = await api('/api/depts');
+      $('#rows').innerHTML = list.length ? list.map((d) => `
+        <tr>
+          <td>${d.sort}</td>
+          <td><span class="tag code">${esc(d.code)}</span></td>
+          <td>${esc(d.name)}</td>
+          <td>${esc(d.leader || '—')}</td>
+          <td class="num">${d.userCount ?? 0}</td>
+          <td>${canWrite ? `
+            <button class="link" data-edit="${d.id}">编辑</button>
+            <button class="link danger-text" data-del="${d.id}">删除</button>` : '<span class="muted">—</span>'}
+          </td>
+        </tr>`).join('') : `<tr><td colspan="6" class="muted" style="text-align:center;padding:26px">暂无部门</td></tr>`;
+
+      $$('[data-edit]').forEach((b) => b.addEventListener('click', () => {
+        const d = list.find((x) => x.id === +b.dataset.edit);
+        editingId = d.id;
+        $('#dlgTitle').textContent = '编辑部门 · ' + d.name;
+        $('#fCode').value = d.code;
+        $('#fName').value = d.name;
+        $('#fLeader').value = d.leader || '';
+        $('#fSort').value = d.sort ?? 99;
+        $('#dlgErr').textContent = '';
+        $('#dlg').showModal();
+      }));
+
+      $$('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+        const d = list.find((x) => x.id === +b.dataset.del);
+        if (!confirm(`确定删除部门「${d.name}」？`)) return;
+        try { await api('/api/depts/' + d.id, { method: 'DELETE' }); toast('已删除'); load(); }
+        catch (e) { toast(e.message, true); }
+      }));
+    } catch (e) { toast(e.message, true); }
+  }
+
+  $('#btnAdd').addEventListener('click', () => {
+    editingId = null;
+    $('#dlgTitle').textContent = '新增部门';
+    $('#fCode').value = '';
+    $('#fName').value = '';
+    $('#fLeader').value = '';
+    $('#fSort').value = 99;
+    $('#dlgErr').textContent = '';
+    $('#dlg').showModal();
+  });
+  $('#dlgCancel').addEventListener('click', () => $('#dlg').close());
+  $('#deptForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      code: $('#fCode').value.trim(),
+      name: $('#fName').value.trim(),
+      leader: $('#fLeader').value.trim(),
+      sort: Number($('#fSort').value) || 99,
+      parentId: null
+    };
+    try {
+      if (editingId) await api('/api/depts/' + editingId, { method: 'PUT', body });
+      else await api('/api/depts', { method: 'POST', body });
+      $('#dlg').close();
+      toast(editingId ? '已保存' : '已新增');
+      load();
+    } catch (err) { $('#dlgErr').textContent = err.message; }
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.unitsys.mapper.DeptMapper">
+
+  <select id="list" resultType="com.example.unitsys.entity.SysDept">
+    select d.id, d.code, d.name, d.parent_id, d.leader, d.sort,
+           (select count(*) from sys_user u where u.dept_id = d.id and u.status = 1) as user_count
+    from sys_dept d
+    order by d.sort, d.id
+  </select>
+
+  <select id="findById" resultType="com.example.unitsys.entity.SysDept">
+    select d.id, d.code, d.name, d.parent_id, d.leader, d.sort,
+           (select count(*) from sys_user u where u.dept_id = d.id and u.status = 1) as user_count
+    from sys_dept d
+    where d.id = #{id}
+  </select>
+
+  <select id="findByCode" resultType="com.example.unitsys.entity.SysDept">
+    select d.id, d.code, d.name, d.parent_id, d.leader, d.sort
+    from sys_dept d
+    where d.code = #{code}
+  </select>
+
+  <insert id="insert" parameterType="com.example.unitsys.entity.SysDept" useGeneratedKeys="true" keyProperty="id">
+    insert into sys_dept (code, name, parent_id, leader, sort)
+    values (#{code}, #{name}, #{parentId}, #{leader}, #{sort})
+  </insert>
+
+  <update id="update" parameterType="com.example.unitsys.entity.SysDept">
+    update sys_dept
+    set code = #{code}, name = #{name}, parent_id = #{parentId}, leader = #{leader}, sort = #{sort}
+    where id = #{id}
+  </update>
+
+  <delete id="deleteById">
+    delete from sys_dept where id = #{id}
+  </delete>
+
+  <select id="countUsers" resultType="long">
+    select count(*) from sys_user where dept_id = #{deptId}
+  </select>
+
+</mapper>

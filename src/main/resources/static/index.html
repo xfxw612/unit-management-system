@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>人员管理 · 单位管理系统</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar"></aside>
+  <main class="main">
+    <div class="page-head">
+      <h2>人员管理</h2>
+      <span class="hint" id="scopeHint"></span>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <input id="kw" placeholder="姓名 / 账号 / 电话" style="width:170px">
+        <select id="fDept"><option value="">全部部门</option></select>
+        <select id="fRole"><option value="">全部角色</option></select>
+        <select id="fStatus">
+          <option value="">全部状态</option>
+          <option value="1">在职</option>
+          <option value="0">离职</option>
+        </select>
+        <select id="fEdu">
+          <option value="">全部学历</option>
+          <option>博士</option>
+          <option>硕士</option>
+          <option>本科</option>
+          <option>大专</option>
+        </select>
+        <button id="btnSearch">查 询</button>
+        <button class="ghost" id="btnReset">重 置</button>
+        <span class="spacer"></span>
+        <button data-perm="user:write" id="btnAdd">新增人员</button>
+        <button class="ghost" data-perm="export:users" id="btnCsv">导出 CSV</button>
+        <button class="ghost" data-perm="export:users" id="btnXlsx">导出 Excel</button>
+      </div>
+
+      <table>
+        <thead>
+        <tr>
+          <th>账号</th><th>姓名</th><th>部门</th><th>角色</th><th>性别</th>
+          <th>学历</th><th>入职日期</th><th>状态</th><th class="num">平均绩效</th><th>操作</th>
+        </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+
+      <div class="pager">
+        <span id="totalInfo" class="muted"></span>
+        <select id="size" style="margin-left:auto">
+          <option value="10">10 条/页</option>
+          <option value="20">20 条/页</option>
+          <option value="50">50 条/页</option>
+        </select>
+        <button class="ghost" id="prev">上一页</button>
+        <span id="pageInfo"></span>
+        <button class="ghost" id="next">下一页</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 新增 / 编辑 -->
+<dialog id="dlg">
+  <form id="userForm" method="dialog">
+    <div class="dlg-head" id="dlgTitle">新增人员</div>
+    <div class="dlg-body">
+      <label>账号 <input id="fUsername" maxlength="20" placeholder="3-20 位字母/数字/下划线"></label>
+      <label>初始密码 <input id="fPassword" placeholder="留空则默认 123456"></label>
+      <label>姓名 <input id="fRealName" required></label>
+      <label>性别
+        <select id="fGender">
+          <option value="男">男</option>
+          <option value="女">女</option>
+        </select>
+      </label>
+      <label>部门 <select id="fDeptSel"></select></label>
+      <label>角色 <select id="fRoleSel"></select></label>
+      <label>学历
+        <select id="fEduSel">
+          <option>本科</option>
+          <option>硕士</option>
+          <option>博士</option>
+          <option>大专</option>
+        </select>
+      </label>
+      <label>入职日期 <input id="fHireDate" type="date"></label>
+      <label>电话 <input id="fPhone"></label>
+      <label>邮箱 <input id="fEmail"></label>
+      <label>状态
+        <select id="fStatusSel">
+          <option value="1">在职</option>
+          <option value="0">离职</option>
+        </select>
+      </label>
+      <div class="err" id="dlgErr"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="ghost" id="dlgCancel">取消</button>
+      <button type="submit" id="dlgOk">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- 重置密码 -->
+<dialog id="pwDlg">
+  <form id="pwForm" method="dialog">
+    <div class="dlg-head">重置密码</div>
+    <div class="dlg-body">
+      <label class="wide">新密码（至少 6 位） <input id="newPw" value="123456"></label>
+      <div class="err" id="pwErr"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="ghost" id="pwCancel">取消</button>
+      <button type="submit">确定</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/app.js"></script>
+<script>
+(async function () {
+  let me, page = 1, size = 10, total = 0, editingId = null, pwTargetId = null;
+  const depts = [], roles = [];
+
+  try {
+    me = await boot('user:read');
+  } catch (e) { return; }
+
+  const canWrite = me.perms.includes('user:write');
+  const canExport = me.perms.includes('export:users');
+  $('#scopeHint').textContent = (me.roleLevel <= 1 ? '数据范围：全单位' : '数据范围：本部门（' + me.deptName + '）')
+    + ' · 当前角色：' + me.roleName;
+
+  // 部门、角色下拉
+  try {
+    const [ds, rs] = await Promise.all([api('/api/depts'), api('/api/roles/options')]);
+    depts.push(...ds); roles.push(...rs);
+  } catch (e) { toast(e.message, true); }
+  const deptOpts = depts.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  $('#fDept').insertAdjacentHTML('beforeend', deptOpts);
+  $('#fDeptSel').innerHTML = deptOpts;
+  $('#fRole').insertAdjacentHTML('beforeend', roles.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join(''));
+  $('#fRoleSel').innerHTML = roles.map((r) => `<option value="${r.id}">${esc(r.name)}（${r.code}）</option>`).join('');
+
+  // 非管理员：部门固定为本部门，且不能改
+  if (me.roleLevel > 1) {
+    $('#fDept').innerHTML = `<option value="${me.deptId}">${esc(me.deptName)}</option>`;
+    $('#fDeptSel').innerHTML = `<option value="${me.deptId}">${esc(me.deptName)}</option>`;
+    $('#fDept').disabled = true;
+    $('#fDeptSel').disabled = true;
+    // 只能分配权限比自己低的角色
+    const assignable = roles.filter((r) => r.level > me.roleLevel);
+    $('#fRoleSel').innerHTML = assignable.map((r) => `<option value="${r.id}">${esc(r.name)}（${r.code}）</option>`).join('');
+    $('#fRole').innerHTML = `<option value="">全部角色</option>` + assignable.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join('');
+  }
+
+  function query() {
+    const p = new URLSearchParams();
+    p.set('page', page);
+    p.set('size', size);
+    const map = { keyword: '#kw', deptId: '#fDept', roleId: '#fRole', status: '#fStatus', education: '#fEdu' };
+    Object.entries(map).forEach(([k, sel]) => {
+      const v = $(sel).value.trim();
+      if (v !== '') p.set(k, v);
+    });
+    return p;
+  }
+
+  async function load() {
+    try {
+      const data = await api('/api/users?' + query().toString());
+      total = data.total;
+      const rows = data.rows;
+      $('#rows').innerHTML = rows.length ? rows.map((u) => `
+        <tr>
+          <td>${esc(u.username)}</td>
+          <td>${esc(u.realName)}</td>
+          <td>${esc(u.deptName)}</td>
+          <td><span class="tag ${u.roleLevel <= 1 ? '' : u.roleLevel === 2 ? 'green' : 'gray'}">${esc(u.roleName)}</span></td>
+          <td>${esc(u.gender)}</td>
+          <td>${esc(u.education)}</td>
+          <td>${esc(u.hireDate || '')}</td>
+          <td>${u.status === 1 ? '<span class="tag green">在职</span>' : '<span class="tag gray">离职</span>'}</td>
+          <td class="num">${fmtScore(u.avgScore)}</td>
+          <td>${canWrite ? `
+            <button class="link" data-edit="${u.id}">编辑</button>
+            <button class="link" data-pw="${u.id}">重置密码</button>
+            <button class="link danger-text" data-del="${u.id}">删除</button>` : '<span class="muted">—</span>'}
+          </td>
+        </tr>`).join('') : `<tr><td colspan="10" class="muted" style="text-align:center;padding:26px">没有匹配的人员</td></tr>`;
+
+      const pages = Math.max(1, Math.ceil(total / size));
+      $('#totalInfo').textContent = `共 ${total} 人`;
+      $('#pageInfo').textContent = `${page} / ${pages}`;
+      $('#prev').disabled = page <= 1;
+      $('#next').disabled = page >= pages;
+
+      $$('[data-edit]').forEach((b) => b.addEventListener('click', () => openEdit(+b.dataset.edit)));
+      $$('[data-pw]').forEach((b) => b.addEventListener('click', () => {
+        pwTargetId = +b.dataset.pw;
+        $('#newPw').value = '123456';
+        $('#pwErr').textContent = '';
+        $('#pwDlg').showModal();
+      }));
+      $$('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+        const row = rows.find((r) => r.id === +b.dataset.del);
+        if (!confirm(`确定删除「${row.realName}」？删除后不可恢复。`)) return;
+        try { await api('/api/users/' + row.id, { method: 'DELETE' }); toast('已删除'); load(); }
+        catch (e) { toast(e.message, true); }
+      }));
+    } catch (e) {
+      toast(e.message, true);
+    }
+  }
+
+  function fill(u) {
+    $('#fUsername').value = u ? u.username : '';
+    $('#fUsername').disabled = !!u;
+    $('#fPassword').value = '';
+    $('#fPassword').disabled = !!u;
+    $('#fPassword').placeholder = u ? '（编辑不改密码）' : '留空则默认 123456';
+    $('#fRealName').value = u ? u.realName : '';
+    $('#fGender').value = u ? (u.gender || '男') : '男';
+    $('#fDeptSel').value = u ? u.deptId : (me.roleLevel > 1 ? me.deptId : (depts[0] && depts[0].id) || '');
+    $('#fRoleSel').value = u ? u.roleId : ($('#fRoleSel').options[0] && $('#fRoleSel').options[0].value) || '';
+    $('#fEduSel').value = u ? (u.education || '本科') : '本科';
+    $('#fHireDate').value = u ? (u.hireDate || '') : new Date().toISOString().slice(0, 10);
+    $('#fPhone').value = u ? (u.phone || '') : '';
+    $('#fEmail').value = u ? (u.email || '') : '';
+    $('#fStatusSel').value = u ? String(u.status) : '1';
+    $('#dlgErr').textContent = '';
+  }
+
+  function openAdd() {
+    editingId = null;
+    $('#dlgTitle').textContent = '新增人员';
+    fill(null);
+    $('#dlg').showModal();
+  }
+
+  async function openEdit(id) {
+    try {
+      const u = await api('/api/users/' + id);
+      editingId = id;
+      $('#dlgTitle').textContent = '编辑人员 · ' + u.realName;
+      fill(u);
+      $('#dlg').showModal();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  $('#btnAdd').addEventListener('click', openAdd);
+  $('#dlgCancel').addEventListener('click', () => $('#dlg').close());
+  $('#userForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      username: $('#fUsername').value.trim(),
+      password: $('#fPassword').value,
+      realName: $('#fRealName').value.trim(),
+      gender: $('#fGender').value,
+      phone: $('#fPhone').value.trim(),
+      email: $('#fEmail').value.trim(),
+      deptId: Number($('#fDeptSel').value),
+      roleId: Number($('#fRoleSel').value),
+      education: $('#fEduSel').value,
+      hireDate: $('#fHireDate').value || null,
+      status: Number($('#fStatusSel').value)
+    };
+    try {
+      if (editingId) await api('/api/users/' + editingId, { method: 'PUT', body });
+      else await api('/api/users', { method: 'POST', body });
+      $('#dlg').close();
+      toast(editingId ? '已保存' : '已新增');
+      load();
+    } catch (err) {
+      $('#dlgErr').textContent = err.message;
+    }
+  });
+
+  $('#pwCancel').addEventListener('click', () => $('#pwDlg').close());
+  $('#pwForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/api/users/${pwTargetId}/reset-password`, { method: 'POST', body: { password: $('#newPw').value } });
+      $('#pwDlg').close();
+      toast('密码已重置');
+    } catch (err) { $('#pwErr').textContent = err.message; }
+  });
+
+  $('#btnSearch').addEventListener('click', () => { page = 1; load(); });
+  $('#btnReset').addEventListener('click', () => {
+    ['#kw', '#fStatus', '#fEdu'].forEach((s) => { $(s).value = ''; });
+    if (me.roleLevel <= 1) { $('#fDept').value = ''; $('#fRole').value = ''; }
+    page = 1; load();
+  });
+  $('#kw').addEventListener('keydown', (e) => { if (e.key === 'Enter') { page = 1; load(); } });
+  $('#size').addEventListener('change', () => { size = Number($('#size').value); page = 1; load(); });
+  $('#prev').addEventListener('click', () => { if (page > 1) { page--; load(); } });
+  $('#next').addEventListener('click', () => { if (page * size < total) { page++; load(); } });
+
+  if (canExport) {
+    $('#btnCsv').addEventListener('click', () => download('/api/export/users?' + query().toString() + '&format=csv', '人员列表.csv'));
+    $('#btnXlsx').addEventListener('click', () => download('/api/export/users?' + query().toString() + '&format=xlsx', '人员列表.xlsx'));
+  }
+
+  load();
+})();
+</script>
+</body>
+</html>

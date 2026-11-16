@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>统计与导出 · 单位管理系统</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar"></aside>
+  <main class="main">
+    <div class="page-head">
+      <h2>统计与导出</h2>
+      <span class="hint" id="scopeHint"></span>
+    </div>
+
+    <div class="kpis" id="kpis"></div>
+
+    <div class="chart-grid">
+      <div class="card"><h3>部门人数</h3><div id="cHead"></div></div>
+      <div class="card"><h3>部门平均绩效</h3><div id="cScore"></div></div>
+      <div class="card"><h3>角色分布</h3><div id="cRole"></div></div>
+      <div class="card"><h3>学历分布</h3><div id="cEdu"></div></div>
+      <div class="card"><h3>绩效月度趋势（平均分）</h3><div id="cTrend"></div></div>
+      <div class="card"><h3>在职 / 离职</h3><div id="cStatus"></div></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <h3 style="margin:0">部门绩效明细</h3>
+        <span class="spacer"></span>
+        <button class="ghost" data-perm="export:stats" id="btnCsv">导出 CSV</button>
+        <button data-perm="export:stats" id="btnXlsx">导出 Excel</button>
+      </div>
+      <table>
+        <thead>
+        <tr>
+          <th>部门</th><th>负责人</th><th class="num">在职人数</th>
+          <th class="num">平均绩效</th><th class="num">任务总数</th>
+          <th class="num">已完成</th><th class="num">完成率</th>
+        </tr>
+        </thead>
+        <tbody id="deptRows"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<script src="/app.js"></script>
+<script>
+(async function () {
+  let me;
+  try { me = await boot('stats:read'); } catch (e) { return; }
+
+  let data;
+  try {
+    data = await api('/api/stats/overview');
+  } catch (e) { toast(e.message, true); return; }
+
+  $('#scopeHint').textContent = '统计范围：' + data.scope;
+
+  const stats = data.deptStats || [];
+  const totalHead = stats.reduce((s, d) => s + (d.headcount || 0), 0);
+  const totalScore = stats.reduce((s, d) => s + (d.avgScore || 0) * (d.headcount || 0), 0);
+  const totalTasks = stats.reduce((s, d) => s + (d.totalTasks || 0), 0);
+  const doneTasks = stats.reduce((s, d) => s + (d.doneTasks || 0), 0);
+  const avgScore = totalHead ? totalScore / totalHead : 0;
+  const rate = totalTasks ? doneTasks * 100 / totalTasks : 0;
+
+  $('#kpis').innerHTML = [
+    ['在职人数', totalHead, '人'],
+    ['平均绩效', totalHead ? avgScore.toFixed(1) : '—', '分'],
+    ['任务完成率', totalTasks ? rate.toFixed(1) : '—', '%'],
+    ['部门数', stats.length, '个']
+  ].map(([label, value, unit]) => `
+    <div class="kpi">
+      <div class="label">${label}</div>
+      <div class="value">${value}<small>${unit}</small></div>
+    </div>`).join('');
+
+  const byDept = data.structure.byDept || [];
+  chartBar($('#cHead'), byDept.map((d) => ({ label: d.label, value: d.value })));
+  chartBar($('#cScore'), stats.map((d) => ({ label: d.deptName, value: d.avgScore == null ? 0 : Number(d.avgScore.toFixed(1)) })), { suffix: ' 分' });
+  chartDonut($('#cRole'), data.structure.byRole || []);
+  chartBar($('#cEdu'), (data.structure.byEducation || []).map((d) => ({ label: d.label, value: d.value })));
+  chartLine($('#cTrend'), (data.trend || []).map((t) => ({ label: t.period, value: t.avgScore == null ? 0 : Number(Number(t.avgScore).toFixed(1)) })));
+  chartDonut($('#cStatus'), (data.structure.byStatus || []).map((d) => ({ label: d.label, value: d.value })));
+
+  $('#deptRows').innerHTML = stats.length ? stats.map((d) => `
+    <tr>
+      <td>${esc(d.deptName)}</td>
+      <td>${esc(d.leader || '—')}</td>
+      <td class="num">${d.headcount ?? 0}</td>
+      <td class="num">${fmtScore(d.avgScore)}</td>
+      <td class="num">${d.totalTasks ?? 0}</td>
+      <td class="num">${d.doneTasks ?? 0}</td>
+      <td class="num">${d.taskRate == null ? '—' : d.taskRate + '%'}</td>
+    </tr>`).join('') : `<tr><td colspan="7" class="muted" style="text-align:center;padding:26px">暂无统计数据</td></tr>`;
+
+  if (me.perms.includes('export:stats')) {
+    $('#btnCsv').addEventListener('click', () => download('/api/export/dept-stats?format=csv', '部门绩效.csv'));
+    $('#btnXlsx').addEventListener('click', () => download('/api/export/dept-stats?format=xlsx', '部门绩效.xlsx'));
+  } else {
+    $('#btnCsv').style.display = 'none';
+    $('#btnXlsx').style.display = 'none';
+  }
+})();
+</script>
+</body>
+</html>

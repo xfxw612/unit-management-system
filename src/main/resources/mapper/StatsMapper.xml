@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.unitsys.mapper.StatsMapper">
+
+  <!-- value 在 H2 / MySQL 8 里都是关键字，列别名统一用 cnt，再由 resultMap 映射回实体 -->
+  <resultMap id="nameCountMap" type="com.example.unitsys.entity.NameCount">
+    <result column="label" property="label"/>
+    <result column="cnt" property="value"/>
+  </resultMap>
+
+  <!-- 部门绩效：人数去重（一个人有多个绩效周期，join 后会翻倍） -->
+  <select id="deptStats" resultType="com.example.unitsys.entity.DeptStat">
+    select d.id as dept_id,
+           d.name as dept_name,
+           d.leader as leader,
+           count(distinct u.id) as headcount,
+           round(avg(p.score), 1) as avg_score,
+           coalesce(sum(p.tasks), 0) as total_tasks,
+           coalesce(sum(p.done), 0) as done_tasks
+    from sys_dept d
+    left join sys_user u on u.dept_id = d.id and u.status = 1
+    left join perf_record p on p.user_id = u.id
+    <where>
+      <if test="deptId != null"> d.id = #{deptId} </if>
+    </where>
+    group by d.id, d.name, d.leader, d.sort
+    order by d.sort, d.id
+  </select>
+
+  <select id="trend" resultType="com.example.unitsys.entity.TrendRow">
+    select p.period as period,
+           round(avg(p.score), 1) as avg_score,
+           count(distinct p.user_id) as headcount
+    from perf_record p
+    join sys_user u on u.id = p.user_id
+    <where>
+      <if test="deptId != null"> and u.dept_id = #{deptId} </if>
+    </where>
+    group by p.period
+    order by p.period
+  </select>
+
+  <select id="countByDept" resultMap="nameCountMap">
+    select d.name as label, count(u.id) as cnt
+    from sys_dept d
+    left join sys_user u on u.dept_id = d.id and u.status = 1
+    <where>
+      <if test="deptId != null"> d.id = #{deptId} </if>
+    </where>
+    group by d.id, d.name, d.sort
+    order by d.sort
+  </select>
+
+  <select id="countByRole" resultMap="nameCountMap">
+    select r.name as label, count(u.id) as cnt
+    from sys_role r
+    left join sys_user u on u.role_id = r.id and u.status = 1
+      <if test="deptId != null"> and u.dept_id = #{deptId} </if>
+    group by r.id, r.name, r.level
+    order by r.level
+  </select>
+
+  <select id="countByEducation" resultMap="nameCountMap">
+    select coalesce(u.education, '未填') as label, count(*) as cnt
+    from sys_user u
+    where u.status = 1
+      <if test="deptId != null"> and u.dept_id = #{deptId} </if>
+    group by u.education
+    order by cnt desc
+  </select>
+
+  <select id="countByStatus" resultMap="nameCountMap">
+    select case when u.status = 1 then '在职' else '离职' end as label, count(*) as cnt
+    from sys_user u
+    <where>
+      <if test="deptId != null"> u.dept_id = #{deptId} </if>
+    </where>
+    group by u.status
+    order by u.status desc
+  </select>
+
+</mapper>

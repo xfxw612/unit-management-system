@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.unitsys.mapper.UserMapper">
+
+  <!-- 列表不查 password，避免密码摘要被带到前端 -->
+  <sql id="cols">
+    u.id, u.username, u.real_name, u.gender, u.phone, u.email,
+    u.dept_id, u.role_id, u.education, u.hire_date, u.status
+  </sql>
+
+  <sql id="whereClause">
+    <where>
+      <if test="q.deptId != null"> and u.dept_id = #{q.deptId} </if>
+      <if test="q.roleId != null"> and u.role_id = #{q.roleId} </if>
+      <if test="q.status != null"> and u.status = #{q.status} </if>
+      <if test="q.education != null"> and u.education = #{q.education} </if>
+      <if test="q.keywordLike != null">
+        and (u.real_name like #{q.keywordLike} or u.username like #{q.keywordLike})
+      </if>
+    </where>
+  </sql>
+
+  <select id="page" resultType="com.example.unitsys.entity.SysUser">
+    select <include refid="cols"/>,
+           d.name as dept_name,
+           r.name as role_name,
+           r.code as role_code,
+           r.level as role_level,
+           (select round(avg(p.score), 1) from perf_record p where p.user_id = u.id) as avg_score
+    from sys_user u
+    join sys_dept d on d.id = u.dept_id
+    join sys_role r on r.id = u.role_id
+    <include refid="whereClause"/>
+    order by u.id
+    limit #{q.size} offset #{q.offset}
+  </select>
+
+  <select id="count" resultType="long">
+    select count(*)
+    from sys_user u
+    <include refid="whereClause"/>
+  </select>
+
+  <select id="listForExport" resultType="com.example.unitsys.entity.SysUser">
+    select <include refid="cols"/>,
+           d.name as dept_name,
+           r.name as role_name,
+           r.code as role_code,
+           r.level as role_level,
+           (select round(avg(p.score), 1) from perf_record p where p.user_id = u.id) as avg_score
+    from sys_user u
+    join sys_dept d on d.id = u.dept_id
+    join sys_role r on r.id = u.role_id
+    <include refid="whereClause"/>
+    order by u.id
+  </select>
+
+  <select id="findById" resultType="com.example.unitsys.entity.SysUser">
+    select <include refid="cols"/>,
+           d.name as dept_name,
+           r.name as role_name,
+           r.code as role_code,
+           r.level as role_level
+    from sys_user u
+    join sys_dept d on d.id = u.dept_id
+    join sys_role r on r.id = u.role_id
+    where u.id = #{id}
+  </select>
+
+  <select id="findByUsername" resultType="com.example.unitsys.entity.SysUser">
+    select u.id, u.username, u.password, u.real_name, u.gender, u.phone, u.email,
+           u.dept_id, u.role_id, u.education, u.hire_date, u.status,
+           d.name as dept_name, r.name as role_name, r.code as role_code, r.level as role_level
+    from sys_user u
+    join sys_dept d on d.id = u.dept_id
+    join sys_role r on r.id = u.role_id
+    where u.username = #{username}
+  </select>
+
+  <insert id="insert" parameterType="com.example.unitsys.entity.SysUser" useGeneratedKeys="true" keyProperty="id">
+    insert into sys_user
+      (username, password, real_name, gender, phone, email, dept_id, role_id, education, hire_date, status)
+    values
+      (#{username}, #{password}, #{realName}, #{gender}, #{phone}, #{email},
+       #{deptId}, #{roleId}, #{education}, #{hireDate}, #{status})
+  </insert>
+
+  <update id="update" parameterType="com.example.unitsys.entity.SysUser">
+    update sys_user
+    set real_name = #{realName},
+        gender = #{gender},
+        phone = #{phone},
+        email = #{email},
+        dept_id = #{deptId},
+        role_id = #{roleId},
+        education = #{education},
+        hire_date = #{hireDate},
+        status = #{status}
+    where id = #{id}
+  </update>
+
+  <delete id="deleteById">
+    delete from sys_user where id = #{id}
+  </delete>
+
+  <update id="updatePassword">
+    update sys_user set password = #{password} where id = #{id}
+  </update>
+
+  <update id="updateRole">
+    update sys_user set role_id = #{roleId} where id = #{id}
+  </update>
+
+</mapper>

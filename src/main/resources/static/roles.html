@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>角色权限 · 单位管理系统</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar"></aside>
+  <main class="main">
+    <div class="page-head">
+      <h2>角色权限</h2>
+      <span class="hint">RBAC：角色挂权限码，接口上用 @RequirePerm 校验；数据范围在 Service 里再收一次口</span>
+    </div>
+
+    <div class="kpis" id="levelCards"></div>
+
+    <div class="card">
+      <h3>角色与权限码</h3>
+      <table>
+        <thead>
+        <tr><th>角色</th><th>编码</th><th class="num">级别</th><th class="num">权限数</th><th>权限码</th></tr>
+        </thead>
+        <tbody id="roleRows"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>权限点说明</h3>
+      <table>
+        <thead><tr><th style="width:170px">权限码</th><th style="width:120px">所属模块</th><th>含义</th></tr></thead>
+        <tbody id="permRows"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>越权是怎么被拦住的</h3>
+      <ol class="muted" style="line-height:2;margin:0;padding-left:20px">
+        <li><b>接口级</b>：<span class="tag code">AuthInterceptor</span> 读 session 里的登录用户，方法上没有对应权限码直接返回 403，请求进不到 Service。</li>
+        <li><b>数据级</b>：部门管理员查询时强制把 deptId 换成本部门；显式传别的部门 → 403（见 <span class="tag code">UserService.applyScope</span>）。</li>
+        <li><b>角色级</b>：非管理员只能维护 / 分配 level 比自己大的角色，不能动同级或更高级的账号（见 <span class="tag code">checkTargetMutable</span>、<span class="tag code">checkRoleAssignable</span>）。</li>
+        <li>调岗（改角色）单独一个权限点 <span class="tag code">role:write</span>，只有系统管理员有。</li>
+      </ol>
+    </div>
+  </main>
+</div>
+
+<script src="/app.js"></script>
+<script>
+const PERM_DESC = {
+  'user:read': ['人员', '查看人员列表 / 详情'],
+  'user:write': ['人员', '新增、修改、删除人员，重置密码'],
+  'dept:read': ['部门', '查看部门列表'],
+  'dept:write': ['部门', '新增、修改、删除部门（仅管理员）'],
+  'role:read': ['权限', '查看角色与权限矩阵'],
+  'role:write': ['权限', '调整人员所属角色'],
+  'stats:read': ['统计', '查看人员结构与部门绩效统计'],
+  'export:users': ['导出', '导出人员列表（CSV / Excel）'],
+  'export:stats': ['导出', '导出部门绩效（CSV / Excel）']
+};
+
+(async function () {
+  let me;
+  try { me = await boot('role:read'); } catch (e) { return; }
+
+  const roles = await api('/api/roles');
+
+  $('#levelCards').innerHTML = roles
+    .sort((a, b) => a.level - b.level)
+    .map((r) => `
+      <div class="kpi">
+        <div class="label">${esc(r.name)} · ${esc(r.code)}</div>
+        <div class="value">L${r.level}<small>${r.permCodes.length} 个权限码</small></div>
+      </div>`).join('');
+
+  $('#roleRows').innerHTML = roles.map((r) => `
+    <tr>
+      <td>${esc(r.name)}</td>
+      <td><span class="tag code">${esc(r.code)}</span></td>
+      <td class="num">${r.level}</td>
+      <td class="num">${r.permCodes.length}</td>
+      <td>${r.permCodes.map((p) => `<span class="tag code">${esc(p)}</span>`).join('') || '<span class="muted">—</span>'}</td>
+    </tr>`).join('');
+
+  const allPerms = [...new Set(roles.flatMap((r) => r.permCodes))].sort();
+  $('#permRows').innerHTML = allPerms.map((p) => {
+    const [mod, desc] = PERM_DESC[p] || ['其它', ''];
+    return `<tr><td><span class="tag code">${esc(p)}</span></td><td>${esc(mod)}</td><td>${esc(desc)}</td></tr>`;
+  }).join('');
+})();
+</script>
+</body>
+</html>

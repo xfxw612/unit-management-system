@@ -1,0 +1,71 @@
+server:
+  port: 8088
+  servlet:
+    session:
+      timeout: 60m
+
+spring:
+  application:
+    name: unit-sys
+  profiles:
+    # 本机没有 MySQL，默认用 h2 起（内存库，重启即重置演示数据）。
+    # 装了 MySQL 之后改成 mysql，见 README「两条路」。
+    active: h2
+  jackson:
+    date-format: yyyy-MM-dd
+    time-zone: Asia/Shanghai
+    default-property-inclusion: non_null
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.example.unitsys.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    default-statement-timeout: 10
+
+app:
+  excel-max-rows: 20000
+
+logging:
+  level:
+    com.example.unitsys.mapper: info
+    org.springframework.jdbc.datasource.init: warn
+
+---
+# ===== 本地开发：H2 内存库（默认） =====
+spring:
+  config:
+    activate:
+      on-profile: h2
+  datasource:
+    url: jdbc:h2:mem:unitsys;MODE=MySQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/h2-schema.sql
+      data-locations: classpath:db/data.sql
+      continue-on-error: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+---
+# ===== 有 MySQL 时：先手工导入 sql/mysql-schema.sql + db/data.sql =====
+spring:
+  config:
+    activate:
+      on-profile: mysql
+  datasource:
+    url: jdbc:mysql://localhost:3306/unit_sys?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: root
+    password: ${MYSQL_PASSWORD:}
+    hikari:
+      maximum-pool-size: 10
+  sql:
+    init:
+      mode: never
